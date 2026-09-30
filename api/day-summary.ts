@@ -18,7 +18,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return response.status(503).json({ error: "Gemini is not configured" });
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  let model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
   const body = (request.body || {}) as SummaryRequest;
   const prompt = [
@@ -35,7 +35,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
   ].join("\n");
 
   try {
-    const geminiResponse = await fetch(
+    let geminiResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: "POST",
@@ -43,9 +43,29 @@ export default async function handler(request: VercelRequest, response: VercelRe
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
       },
     );
+    if (!geminiResponse.ok && (geminiResponse.status === 404 || geminiResponse.status === 400)) {
+      const modelsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+      if (modelsResponse.ok) {
+        const modelsData = await modelsResponse.json() as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
+        const available = modelsData.models?.find((item) => item.name?.startsWith("models/") && item.supportedGenerationMethods?.includes("generateContent"));
+        if (available?.name) {
+          model = available.name.replace(/^models\//, "");
+          geminiResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+            },
+          );
+        }
+      }
+    }
     if (!geminiResponse.ok) {
-      console.error("Gemini request failed", { model, status: geminiResponse.status });
-      return response.status(502).json({ error: "Gemini summary request failed", model });
+      const upstream = await geminiResponse.text();
+      console.error("Gemini request failed", { model, status: geminiResponse.status, upstream: upstream.slice(0, 500) });
+      const error = geminiResponse.status === 401 || geminiResponse.status === 403 ? "Gemini key is invalid or does not have API access" : "Gemini summary request failed";
+      return response.status(502).json({ error, model });
     }
     const data = await geminiResponse.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
