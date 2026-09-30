@@ -30,6 +30,7 @@ const activitiesKey = () => `dayflow-activities-${todayKey()}`;
 const waterKey = () => `dayflow-water-${todayKey()}`;
 const poopKey = () => `dayflow-poop-${todayKey()}`;
 const screenKey = () => `dayflow-screen-${todayKey()}`;
+type ScreenBreakdown = Record<string, number>;
 const toMinutes = (value: string) => { const [hours, minutes] = value.split(":").map(Number); return hours * 60 + minutes; };
 const formatTime = (value: string) => new Date(`2000-01-01T${value}`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const formatDateTime = (value: string) => new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -139,18 +140,20 @@ function TrackerPage({ kind, onBack }: { kind: "water" | "bathroom" | "screen"; 
   const isScreen = kind === "screen";
   const [water, setWater] = useState(() => Number(localStorage.getItem(waterKey()) || 0));
   const [poops, setPoops] = useState(() => Number(localStorage.getItem(poopKey()) || 0));
-  const [screen, setScreen] = useState(() => Number(localStorage.getItem(screenKey()) || 0));
+  const [screenApps, setScreenApps] = useState<ScreenBreakdown>(() => JSON.parse(localStorage.getItem(screenKey()) || "{}"));
+  const [selectedApp, setSelectedApp] = useState("Instagram");
+  const screen = Object.values(screenApps).reduce((total, minutes) => total + minutes, 0);
   const count = isWater ? water : isScreen ? screen : poops;
   const add = () => {
     if (isWater) { const next = Math.min(water + 1, 12); setWater(next); localStorage.setItem(waterKey(), String(next)); }
-    else if (isScreen) { const next = screen + 15; setScreen(next); localStorage.setItem(screenKey(), String(next)); }
+    else if (isScreen) { const next = { ...screenApps, [selectedApp]: (screenApps[selectedApp] || 0) + 15 }; setScreenApps(next); localStorage.setItem(screenKey(), JSON.stringify(next)); }
     else { const next = poops + 1; setPoops(next); localStorage.setItem(poopKey(), String(next)); }
   };
   return <main className={`app tracker-page ${isWater ? "phase-afternoon" : "phase-morning"}`}><div className="sky" aria-hidden="true"><div className="sun-orb" /><div className="cloud cloud-one"><CloudSun size={56} /></div></div>
     <header className="topbar"><button className="back-link" onClick={onBack}>← Today</button><a className="brand" href="/"><span className="brand-mark"><Flower2 size={18} /></span>dayflow</a><span className="date-label">{new Date().toLocaleDateString([], { month: "short", day: "numeric" })}</span></header>
     <section className="tracker-wrap"><p className="kicker"><span className="pulse" /> {isScreen ? "A simple manual log" : "A tiny body check-in"}</p><h1>{isWater ? <>Fill your <em>cup.</em></> : isScreen ? <>Notice your <em>screen time.</em></> : <>Listen to your <em>body.</em></>}</h1><p className="tracker-copy">{isWater ? "A little water, a little more energy. Tap the glass whenever you refill." : isScreen ? "Browsers cannot read your device usage, so add a rough amount whenever you notice." : "No judgement, just useful information. Tap the toilet whenever you go."}</p>
       <div className={`tracker-illustration ${isWater ? "water-illustration" : "poop-illustration"}`} aria-live="polite">{isWater ? <><Droplets className="big-drop" size={94} /><div className="glass"><div className="glass-fill" style={{ height: `${Math.min(count * 9, 100)}%` }} /><span>💧</span></div></> : isScreen ? <div className="screen-illustration">📱<span>+15</span></div> : <><div className="moon-face">☻</div><div className="toilet" aria-label="Cute toilet">🚽</div>{Array.from({ length: Math.min(count, 8) }).map((_, index) => <span className="poop-drop" style={{ animationDelay: `${index * .12}s`, left: `${35 + (index % 4) * 9}%` }} key={index}>💩</span>)}</>}</div>
-      <div className="tracker-count"><strong>{count}</strong><span>{isWater ? `${count === 1 ? "glass" : "glasses"} today` : isScreen ? "minutes today" : `${count === 1 ? "visit" : "visits"} today`}</span></div><button className="tracker-button" onClick={add}>{isWater ? <><Droplets size={20} /> Add a glass</> : isScreen ? <><Clock3 size={20} /> Add 15 minutes</> : <>🚽 Log a poop</>}</button><p className="tracker-note">{isWater ? "A gentle goal: 6–8 glasses" : isScreen ? "No guilt, just a clearer picture." : "Your body has its own schedule ✦"}</p>
+      {isScreen && <div className="screen-app-picker">{["Instagram", "YouTube", "Other"].map((app) => <button className={selectedApp === app ? "selected" : ""} onClick={() => setSelectedApp(app)} key={app}>{app === "Instagram" ? "📸" : app === "YouTube" ? "▶️" : "📱"} {app}<strong>{screenApps[app] || 0}m</strong></button>)}</div>}<div className="tracker-count"><strong>{count}</strong><span>{isWater ? `${count === 1 ? "glass" : "glasses"} today` : isScreen ? "minutes total" : `${count === 1 ? "visit" : "visits"} today`}</span></div><button className="tracker-button" onClick={add}>{isWater ? <><Droplets size={20} /> Add a glass</> : isScreen ? <><Clock3 size={20} /> Add 15 minutes to {selectedApp}</> : <>🚽 Log a poop</>}</button><p className="tracker-note">{isWater ? "A gentle goal: 6–8 glasses" : isScreen ? `Logging ${selectedApp} separately keeps your day clear.` : "Your body has its own schedule ✦"}</p>
     </section></main>;
 }
 
