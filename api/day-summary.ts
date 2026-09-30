@@ -18,7 +18,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return response.status(503).json({ error: "Gemini is not configured" });
-  let model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  let model = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 
   const body = (request.body || {}) as SummaryRequest;
   const prompt = [
