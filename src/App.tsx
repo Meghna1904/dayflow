@@ -167,9 +167,9 @@ function Today({ account, onLogout, onAccountChange }: { account: Account; onLog
     setCompleted((items) => items.includes(`${targetPhase}:${habit}`) ? items : [...items, `${targetPhase}:${habit}`]);
     addActivity({ id: crypto.randomUUID(), text: habit, phase: targetPhase, completedAt: new Date().toISOString(), addedLater: true });
   };
-  if (page !== "today") return <TrackerPage kind={page} onBack={() => setPage("today")} />;
   const overview = useMemo(() => phaseInfo.map((item) => ({ ...item, done: account.settings[item.id].habits.filter((habit) => completed.includes(`${item.id}:${habit}`)).length, total: account.settings[item.id].habits.length })), [account.settings, completed]);
   const Icon = current.icon;
+  if (page !== "today") return <TrackerPage kind={page} onBack={() => setPage("today")} />;
   if (reviewOpen) return <DayReview account={account} completed={completed} activities={activities} onClose={() => setReviewOpen(false)} onCompleteLater={completeLater} onToggleHabit={(targetPhase, habit) => setCompleted((items) => items.filter((item) => item !== `${targetPhase}:${habit}`))} onAdd={() => setAddModal(true)} />;
   return <main className={`app phase-${phase}`}><div className="sky" aria-hidden="true"><div className="sun-orb" /><div className="cloud cloud-one"><CloudSun size={56} /></div><div className="cloud cloud-two"><CloudSun size={42} /></div><div className="stars">✦　·　✧　　·　✦　　·</div></div>
     <header className="topbar"><a className="brand" href="/"><span className="brand-mark"><Flower2 size={18} /></span>dayflow</a><div className="header-actions"><span className="date-label">{now.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}</span><button className="avatar" onClick={onLogout} aria-label="Log out">{account.name.slice(0, 1).toUpperCase()}</button></div></header>
