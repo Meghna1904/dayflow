@@ -47,7 +47,9 @@ export default async function handler(request: VercelRequest, response: VercelRe
       const modelsResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
       if (modelsResponse.ok) {
         const modelsData = await modelsResponse.json() as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
-        const available = modelsData.models?.find((item) => item.name?.startsWith("models/") && item.supportedGenerationMethods?.includes("generateContent"));
+        const available = modelsData.models
+          ?.filter((item) => item.name?.startsWith("models/") && item.supportedGenerationMethods?.includes("generateContent"))
+          .sort((a, b) => Number(b.name?.includes("flash") || false) - Number(a.name?.includes("flash") || false))[0];
         if (available?.name) {
           model = available.name.replace(/^models\//, "");
           geminiResponse = await fetch(
@@ -64,8 +66,8 @@ export default async function handler(request: VercelRequest, response: VercelRe
     if (!geminiResponse.ok) {
       const upstream = await geminiResponse.text();
       console.error("Gemini request failed", { model, status: geminiResponse.status, upstream: upstream.slice(0, 500) });
-      const error = geminiResponse.status === 401 || geminiResponse.status === 403 ? "Gemini key is invalid or does not have API access" : "Gemini summary request failed";
-      return response.status(502).json({ error, model });
+      const error = geminiResponse.status === 401 || geminiResponse.status === 403 ? "Gemini key is invalid or does not have API access" : geminiResponse.status === 404 ? "No available Gemini model supports this API key" : "Gemini summary request failed";
+      return response.status(502).json({ error, model, hint: "Set GEMINI_MODEL to a model returned by the Gemini ListModels API, then redeploy." });
     }
     const data = await geminiResponse.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
