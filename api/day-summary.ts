@@ -18,6 +18,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return response.status(503).json({ error: "Gemini is not configured" });
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
   const body = (request.body || {}) as SummaryRequest;
   const prompt = [
@@ -35,14 +36,17 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   try {
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
       },
     );
-    if (!geminiResponse.ok) return response.status(502).json({ error: "Gemini summary request failed" });
+    if (!geminiResponse.ok) {
+      console.error("Gemini request failed", { model, status: geminiResponse.status });
+      return response.status(502).json({ error: "Gemini summary request failed", model });
+    }
     const data = await geminiResponse.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!text) return response.status(502).json({ error: "Gemini returned an empty summary" });
