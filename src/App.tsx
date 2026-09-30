@@ -229,9 +229,6 @@ function Today({ account, onLogout, onAccountChange }: { account: Account; onLog
   const addActivity = (activity: Activity) => { setActivities((items) => [...items, activity]); setToast(`${activity.text} added to your day`); };
   const completeLater = (targetPhase: PhaseId, habit: string) => {
     setCompleted((items) => items.includes(`${targetPhase}:${habit}`) ? items : [...items, `${targetPhase}:${habit}`]);
-    if (!activities.some((activity) => activity.phase === targetPhase && activity.text.trim().toLowerCase() === habit.trim().toLowerCase())) {
-      addActivity({ id: crypto.randomUUID(), text: habit, phase: targetPhase, completedAt: new Date().toISOString(), addedLater: true });
-    }
   };
   const overview = useMemo(() => phaseInfo.map((item) => ({ ...item, done: activeHabits(account.settings, item.id).filter((habit) => completed.includes(`${item.id}:${habit}`)).length, total: activeHabits(account.settings, item.id).length })), [account.settings, completed]);
   const Icon = current.icon;
