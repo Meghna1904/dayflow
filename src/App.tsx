@@ -118,8 +118,23 @@ function DayReview({ account, completed, activities, water, poop, screen, onClos
   const totalHabits = phaseInfo.reduce((sum, item) => sum + account.settings[item.id].habits.length, 0);
   const score = Math.min(100, Math.round((totalDone / Math.max(totalHabits, 1)) * 70 + Math.min(water / 8, 1) * 20 + (poop ? 5 : 0) + (screen > 0 ? 5 : 0)));
   const goofy = score >= 85 ? "Your day was a tiny parade of competence. The moon has filed a very positive report." : score >= 60 ? "A respectable little day: some sparkle, some wobble, and absolutely no need to pretend the wobble was not there." : "Today was more of a cozy loading screen. You still logged in, and honestly, that counts as plot development.";
+  const [geminiSummary, setGeminiSummary] = useState("");
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const getGeminiSummary = async () => {
+    setSummaryLoading(true);
+    try {
+      const result = await fetch("/api/day-summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: account.name, score, completed: totalDone, addedLater: activities.length, water, bathroom: poop, screenMinutes: screen }) });
+      const data = await result.json() as { summary?: string };
+      if (!result.ok || !data.summary) throw new Error("Summary unavailable");
+      setGeminiSummary(data.summary);
+    } catch {
+      setGeminiSummary("The tiny summary machine is napping, so here’s the human version: you made it through another day, and that is worthy of a small celebratory wiggle.");
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
   return <main className="app phase-night review-screen"><div className="sky" aria-hidden="true"><div className="sun-orb" /><div className="stars">✦　·　✧　　·　✦　　·</div></div><header className="topbar"><a className="brand" href="/"><span className="brand-mark"><Flower2 size={18} /></span>dayflow</a><button className="review-close" onClick={onClose}>Back to today <X size={16} /></button></header>
-    <section className="review-wrap"><p className="kicker"><span className="pulse" /> A gentle look back</p><h1>Your day is <em>ending.</em></h1><p className="join-copy">You showed up in ways that count, {account.name}.</p><div className="day-rating"><span>Today’s goofy rating</span><strong>{score}/100</strong></div><p className="goofy-summary">{goofy}</p><div className="review-stats"><strong>{totalDone} things completed</strong><span>{activities.length} added later · {water} glasses · {poop} bathroom visit{poop === 1 ? "" : "s"} · {screen} screen minutes</span></div>
+    <section className="review-wrap"><p className="kicker"><span className="pulse" /> A gentle look back</p><h1>Your day is <em>ending.</em></h1><p className="join-copy">You showed up in ways that count, {account.name}.</p><div className="day-rating"><span>Today’s goofy rating</span><strong>{score}/100</strong></div><p className="goofy-summary">{geminiSummary || goofy}</p><button className="summary-button" onClick={getGeminiSummary} disabled={summaryLoading}>{summaryLoading ? "Asking the tiny Gemini..." : "✨ Make my goofy summary"} </button><div className="review-stats"><strong>{totalDone} things completed</strong><span>{activities.length} added later · {water} glasses · {poop} bathroom visit{poop === 1 ? "" : "s"} · {screen} screen minutes</span></div>
       <div className="review-periods">{phaseInfo.map((item) => { const planned = account.settings[item.id].habits; const done = planned.filter((habit) => completed.includes(`${item.id}:${habit}`)); const late = activities.filter((activity) => activity.phase === item.id); const PhaseIcon = item.icon; return <section className="review-period" key={item.id}><div className="review-period-head"><h2><PhaseIcon size={18} />{item.label}</h2><span>{done.length}/{planned.length}</span></div><div className="review-items">{planned.map((habit) => { const isDone = completed.includes(`${item.id}:${habit}`); return <button className={`review-item ${isDone ? "done" : ""}`} key={habit} onClick={() => isDone ? onToggleHabit(item.id, habit) : onCompleteLater(item.id, habit)}><span className="check-box">{isDone && <Check size={13} strokeWidth={3} />}</span>{habit}<small>{isDone ? "tap to undo" : "tap to log later"}</small></button>; })}{late.map((activity) => <div className="review-item done late-item" key={activity.id}><span className="check-box"><Check size={13} strokeWidth={3} /></span>{activity.text}<small>↳ completed later at {formatDateTime(activity.completedAt)}</small></div>)}</div></section>; })}</div>
       <button className="add-line review-add" onClick={onAdd}><CirclePlus size={18} /> Add something I did</button><button className="primary-button close-day" onClick={onClose}><Sparkles size={17} /> Close my day</button>
     </section></main>;
