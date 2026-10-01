@@ -124,16 +124,16 @@ function AddSomething({ phase, onClose, onHabit, onActivity }: { phase: PhaseId;
   </form></div>;
 }
 
-function SupabaseAuth({ onAuthenticated }: { onAuthenticated: (session: Session) => void }) {
+function SupabaseAuth({ onAuthenticated }: { onAuthenticated: (session: Session, needsRoutine?: boolean) => void }) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [name, setName] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setError("");
-    const result = mode === "login" ? await supabase!.auth.signInWithPassword({ email, password }) : await supabase!.auth.signUp({ email, password, options: { data: { name: name.trim() } } });
-    if (result.error) setError(result.error.message); else if (result.data.session) onAuthenticated(result.data.session); else setError("Check your email to confirm your account, then log in.");
+    const result = mode === "login" ? await supabase!.auth.signInWithPassword({ email, password }) : await supabase!.auth.signUp({ email, password, options: { data: { name: name.trim(), routine_complete: false } } });
+    if (result.error) setError(result.error.message); else if (result.data.session) onAuthenticated(result.data.session, mode === "signup"); else setError("Check your email to confirm your account, then log in.");
     setBusy(false);
   };
-  return <main className="app phase-morning join-screen"><div className="join-wrap"><a className="brand" href="/"><span className="brand-mark"><Flower2 size={18} /></span>dayflow</a><div className="join-card"><p className="kicker"><span className="pulse" /> Your private Dayflow</p><h1>{mode === "login" ? <>Welcome <em>back.</em></> : <>Make your <em>account.</em></>}</h1><p className="join-copy">Sign in with email and password to keep your routine and Vault available across devices.</p><form onSubmit={submit}>{mode === "signup" && <label>Your name<input value={name} onChange={(event) => setName(event.target.value)} required /></label>}<label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="form-error">{error}</p>}<button className="primary-button" disabled={busy}>{busy ? "Opening..." : mode === "login" ? "Log in" : "Create account"} <ArrowUpRight size={17} /></button></form><button className="switch-button" onClick={() => setMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "New here? Create an account" : "Already have an account? Log in"}</button></div></div></main>;
+  return <main className="app phase-morning join-screen"><div className="join-wrap"><a className="brand" href="/"><span className="brand-mark"><Flower2 size={18} /></span>dayflow</a><div className="join-card"><p className="kicker"><span className="pulse" /> Your private Dayflow</p><h1>{mode === "login" ? <>Welcome <em>back.</em></> : <>Make your <em>account.</em></>}</h1><p className="join-copy">{mode === "login" ? "Sign in to pick up your routine and Vault wherever you left off." : "Create your account, then Dayflow will ask about your day and habits before you begin."}</p><form onSubmit={submit}>{mode === "signup" && <label>Your name<input value={name} onChange={(event) => setName(event.target.value)} required /></label>}<label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="form-error">{error}</p>}<button className="primary-button" disabled={busy}>{busy ? "Opening..." : mode === "login" ? "Log in" : "Create account & shape my day"} <ArrowUpRight size={17} /></button></form><button className="switch-button" onClick={() => setMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "New here? Create an account" : "Already have an account? Log in"}</button></div></div></main>;
 }
 
 function VaultPage({ account, userId, onBack }: { account: Account; userId?: string; onBack: () => void }) {
@@ -373,10 +373,10 @@ function App() {
   const [onboarding, setOnboarding] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   useEffect(() => { if (!supabase) return; supabase.auth.getSession().then(({ data }) => setSession(data.session)); const listener = supabase.auth.onAuthStateChange((_event, next) => setSession(next)); return () => listener.data.subscription.unsubscribe(); }, []);
-  useEffect(() => { if (supabase && session && !account) { const next = { name: session.user.user_metadata.name || session.user.email?.split("@")[0] || "friend", passcode: "supabase", settings: defaults }; localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); } }, [account, session]);
-  if (supabase && !session) return <SupabaseAuth onAuthenticated={setSession} />;
+  useEffect(() => { if (supabase && session && !account) { const next = { name: session.user.user_metadata.name || session.user.email?.split("@")[0] || "friend", passcode: "supabase", settings: defaults }; localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); setOnboarding(session.user.user_metadata.routine_complete === false); } }, [account, session]);
+  if (supabase && !session) return <SupabaseAuth onAuthenticated={(next, needsRoutine) => { if (needsRoutine) setAccount(null); setSession(next); }} />;
   const join = (next: Account) => { setAccount(next); setOnboarding(!localStorage.getItem(storageKey)); };
-  const complete = (next: Account) => { localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); setOnboarding(false); };
+  const complete = (next: Account) => { localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); setOnboarding(false); if (supabase && session) void supabase.auth.updateUser({ data: { routine_complete: true } }); };
   if (!account) return <Join onJoin={join} />;
   if (onboarding) return <Onboarding account={account} onComplete={complete} />;
   return <Today account={account} userId={session?.user.id} onAccountChange={(next) => { localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); }} onLogout={() => { if (supabase) void supabase.auth.signOut(); setAccount(null); setSession(null); setOnboarding(false); }} />;
