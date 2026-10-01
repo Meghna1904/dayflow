@@ -250,7 +250,7 @@ function Today({ account, onLogout, onAccountChange }: { account: Account; onLog
   const [addOpen, setAddOpen] = useState(false);
   const [addModal, setAddModal] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [reviewOpen, setReviewOpen] = useState(() => getCurrentPhase(account.settings) === "night");
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [activities, setActivities] = useState<Activity[]>(() => uniqueActivities(JSON.parse(localStorage.getItem(activitiesKey()) || "[]") as Activity[]));
   const [water, setWater] = useState(() => Number(localStorage.getItem(waterKey()) || 4));
   const [page, setPage] = useState<"today" | "water" | "bathroom" | "timeline" | "calendar" | "settings" | "screen" | "vault">("today");
