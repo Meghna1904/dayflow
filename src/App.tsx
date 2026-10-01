@@ -136,18 +136,31 @@ function SupabaseAuth({ onAuthenticated }: { onAuthenticated: (session: Session)
   return <main className="app phase-morning join-screen"><div className="join-wrap"><a className="brand" href="/"><span className="brand-mark"><Flower2 size={18} /></span>dayflow</a><div className="join-card"><p className="kicker"><span className="pulse" /> Your private Dayflow</p><h1>{mode === "login" ? <>Welcome <em>back.</em></> : <>Make your <em>account.</em></>}</h1><p className="join-copy">Sign in with email and password to keep your routine and Vault available across devices.</p><form onSubmit={submit}>{mode === "signup" && <label>Your name<input value={name} onChange={(event) => setName(event.target.value)} required /></label>}<label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="form-error">{error}</p>}<button className="primary-button" disabled={busy}>{busy ? "Opening..." : mode === "login" ? "Log in" : "Create account"} <ArrowUpRight size={17} /></button></form><button className="switch-button" onClick={() => setMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "New here? Create an account" : "Already have an account? Log in"}</button></div></div></main>;
 }
 
-function VaultPage({ account, onBack }: { account: Account; onBack: () => void }) {
+function VaultPage({ account, userId, onBack }: { account: Account; userId?: string; onBack: () => void }) {
   const key = `dayflow-vault-${account.name.toLowerCase()}`;
   const [items, setItems] = useState<VaultItem[]>(() => JSON.parse(localStorage.getItem(key) || "[]") as VaultItem[]);
   const [text, setText] = useState(""); const [category, setCategory] = useState<VaultCategory>("Thoughts"); const [filter, setFilter] = useState<VaultCategory | "All">("All"); const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    (async () => {
+      const localItems = JSON.parse(localStorage.getItem(key) || "[]") as VaultItem[];
+      if (localItems.length && !localStorage.getItem(`dayflow-vault-migrated-${userId}`)) {
+        await supabase.from("dayflow_vault_items").upsert(localItems.map((item) => ({ id: item.id, user_id: userId, text: item.text, category: item.category, created_at: item.createdAt })), { onConflict: "id" });
+        localStorage.setItem(`dayflow-vault-migrated-${userId}`, "1");
+      }
+      const { data, error } = await supabase.from("dayflow_vault_items").select("id,text,category,created_at").eq("user_id", userId).order("created_at", { ascending: false });
+      if (!error && data) { const loaded = data.map((item) => ({ id: item.id as string, text: item.text as string, category: item.category as VaultCategory, createdAt: item.created_at as string })); setItems(loaded); localStorage.setItem(key, JSON.stringify(loaded)); }
+    })();
+  }, [key, userId]);
   const save = (next: VaultItem[]) => { setItems(next); localStorage.setItem(key, JSON.stringify(next)); };
   const add = async (event: FormEvent) => {
     event.preventDefault(); if (!text.trim()) return; setBusy(true); let chosen = category;
     try { const result = await fetch("/api/vault-categorize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }); if (result.ok) { const data = await result.json() as { category?: VaultCategory }; if (data.category && vaultCategories.includes(data.category)) chosen = data.category; } } catch { /* local categorization remains available */ }
-    save([{ id: crypto.randomUUID(), text: text.trim(), category: chosen, createdAt: new Date().toISOString() }, ...items]); setText(""); setCategory(chosen); setBusy(false);
+    const item = { id: crypto.randomUUID(), text: text.trim(), category: chosen, createdAt: new Date().toISOString() };
+    save([item, ...items]); if (supabase && userId) await supabase.from("dayflow_vault_items").insert({ id: item.id, user_id: userId, text: item.text, category: item.category, created_at: item.createdAt }); setText(""); setCategory(chosen); setBusy(false);
   };
   const visible = filter === "All" ? items : items.filter((item) => item.category === filter);
-  return <main className="app phase-afternoon subpage"><header className="topbar"><button className="back-link" onClick={onBack}>← Today</button><a className="brand" href="/"><span className="brand-mark"><Flower2 size={18} /></span>dayflow</a><span>🔐</span></header><section className="subpage-wrap vault-wrap"><p className="kicker"><span className="pulse" /> A private shelf for your brain</p><h1>Your <em>Vault.</em></h1><p className="tracker-copy">Save a passing thought, link, recommendation, or opportunity. Gemini can sort it; you stay in control.</p><form className="vault-compose" onSubmit={add}><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Paste a link or write a thought..." /><div><select value={category} onChange={(event) => setCategory(event.target.value as VaultCategory)}>{vaultCategories.map((item) => <option key={item}>{item}</option>)}</select><button className="primary-button" disabled={busy}>{busy ? "Sorting..." : "Save to Vault"} <Sparkles size={16} /></button></div></form><div className="vault-filters"><button className={filter === "All" ? "selected" : ""} onClick={() => setFilter("All")}>All</button>{vaultCategories.map((item) => <button className={filter === item ? "selected" : ""} onClick={() => setFilter(item)} key={item}>{item}</button>)}</div><div className="vault-list">{visible.length ? visible.map((item) => <article className="vault-item" key={item.id}><div><span className="vault-category">{item.category}</span><p>{item.text}</p><small>{new Date(item.createdAt).toLocaleDateString()}</small></div><button onClick={() => save(items.filter((candidate) => candidate.id !== item.id))} aria-label="Delete vault item"><X size={15} /></button></article>) : <p className="empty-habits">Your saved sparks will live here.</p>}</div></section></main>;
+  return <main className="app phase-afternoon subpage"><header className="topbar"><button className="back-link" onClick={onBack}>← Today</button><a className="brand" href="/"><span className="brand-mark"><Flower2 size={18} /></span>dayflow</a><span>🔐</span></header><section className="subpage-wrap vault-wrap"><p className="kicker"><span className="pulse" /> A private shelf for your brain</p><h1>Your <em>Vault.</em></h1><p className="tracker-copy">Save a passing thought, link, recommendation, or opportunity. Gemini can sort it; you stay in control.</p><form className="vault-compose" onSubmit={add}><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Paste a link or write a thought..." /><div><select value={category} onChange={(event) => setCategory(event.target.value as VaultCategory)}>{vaultCategories.map((item) => <option key={item}>{item}</option>)}</select><button className="primary-button" disabled={busy}>{busy ? "Sorting..." : "Save to Vault"} <Sparkles size={16} /></button></div></form><div className="vault-filters"><button className={filter === "All" ? "selected" : ""} onClick={() => setFilter("All")}>All</button>{vaultCategories.map((item) => <button className={filter === item ? "selected" : ""} onClick={() => setFilter(item)} key={item}>{item}</button>)}</div><div className="vault-list">{visible.length ? visible.map((item) => <article className="vault-item" key={item.id}><div><span className="vault-category">{item.category}</span><p>{item.text}</p><small>{new Date(item.createdAt).toLocaleDateString()}</small></div><button onClick={async () => { save(items.filter((candidate) => candidate.id !== item.id)); if (supabase && userId) await supabase.from("dayflow_vault_items").delete().eq("id", item.id).eq("user_id", userId); }} aria-label="Delete vault item"><X size={15} /></button></article>) : <p className="empty-habits">Your saved sparks will live here.</p>}</div></section></main>;
 }
 
 function DayReview({ account, completed, activities, water, poop, screen, onClose, onCompleteLater, onToggleHabit, onAdd, readOnly = false, dateLabel }: { account: Account; completed: string[]; activities: Activity[]; water: number; poop: number; screen: number; onClose: () => void; onCompleteLater: (phase: PhaseId, habit: string) => void; onToggleHabit: (phase: PhaseId, habit: string) => void; onAdd: () => void; readOnly?: boolean; dateLabel?: string }) {
@@ -242,7 +255,7 @@ function TrackerPage({ kind, onBack }: { kind: "water" | "bathroom" | "screen"; 
     </section></main>;
 }
 
-function Today({ account, onLogout, onAccountChange }: { account: Account; onLogout: () => void; onAccountChange: (account: Account) => void }) {
+function Today({ account, userId, onLogout, onAccountChange }: { account: Account; userId?: string; onLogout: () => void; onAccountChange: (account: Account) => void }) {
   const [phase, setPhase] = useState<PhaseId>(() => getCurrentPhase(account.settings));
   const [now, setNow] = useState(new Date());
   const [completed, setCompleted] = useState<string[]>(() => JSON.parse(localStorage.getItem(`dayflow-done-${todayKey()}`) || "[]"));
@@ -253,6 +266,7 @@ function Today({ account, onLogout, onAccountChange }: { account: Account; onLog
   const [reviewOpen, setReviewOpen] = useState(false);
   const [activities, setActivities] = useState<Activity[]>(() => uniqueActivities(JSON.parse(localStorage.getItem(activitiesKey()) || "[]") as Activity[]));
   const [water, setWater] = useState(() => Number(localStorage.getItem(waterKey()) || 4));
+  const [cloudLoaded, setCloudLoaded] = useState(!supabase || !userId);
   const [page, setPage] = useState<"today" | "water" | "bathroom" | "timeline" | "calendar" | "settings" | "screen" | "vault">("today");
   const current = phaseInfo.find((item) => item.id === phase)!;
   const habits = activeHabits(account.settings, phase);
@@ -263,6 +277,56 @@ function Today({ account, onLogout, onAccountChange }: { account: Account; onLog
   useEffect(() => { const next = getCurrentPhase(account.settings, now); if (next !== phase) { setPhase(next); setToast(`${phaseInfo.find((item) => item.id === next)?.label} has started`); if (next === "night") setReviewOpen(true); } }, [now, account.settings, phase]);
   useEffect(() => { localStorage.setItem(`dayflow-done-${todayKey()}`, JSON.stringify(completed)); }, [completed]);
   useEffect(() => { localStorage.setItem(activitiesKey(), JSON.stringify(activities)); }, [activities]);
+  useEffect(() => {
+    if (!supabase || !userId) return;
+    let cancelled = false;
+    (async () => {
+      const [{ data: profile }, { data: day }] = await Promise.all([
+        supabase.from("dayflow_profiles").select("name,settings").eq("user_id", userId).maybeSingle(),
+        supabase.from("dayflow_days").select("completed,activities,water").eq("user_id", userId).eq("day", todayKey()).maybeSingle()
+      ]);
+      if (cancelled) return;
+      if (profile?.settings) onAccountChange({ ...account, name: profile.name || account.name, settings: profile.settings as Account["settings"] });
+      if (day) {
+        setCompleted((day.completed || []) as string[]);
+        setActivities(uniqueActivities((day.activities || []) as Activity[]));
+        setWater(Number(day.water || 0));
+      }
+      if (!localStorage.getItem(`dayflow-days-migrated-${userId}`)) {
+        const days = new Set<string>();
+        for (let index = 0; index < localStorage.length; index += 1) {
+          const key = localStorage.key(index) || "";
+          const match = key.match(/^dayflow-(?:done|activities|water|poop|poop-detail|screen)-(\d{4}-\d{2}-\d{2})$/);
+          if (match) days.add(match[1]);
+        }
+        const rows = [...days].map((date) => ({
+          user_id: userId, day: date,
+          completed: JSON.parse(localStorage.getItem(`dayflow-done-${date}`) || "[]"),
+          activities: JSON.parse(localStorage.getItem(`dayflow-activities-${date}`) || "[]"),
+          water: Number(localStorage.getItem(`dayflow-water-${date}`) || 0),
+          bathroom: Number(localStorage.getItem(`dayflow-poop-${date}`) || 0),
+          bathroom_detail: JSON.parse(localStorage.getItem(`dayflow-poop-detail-${date}`) || "null"),
+          screen: JSON.parse(localStorage.getItem(`dayflow-screen-${date}`) || "{}"),
+          updated_at: new Date().toISOString()
+        }));
+        if (rows.length) await supabase.from("dayflow_days").upsert(rows, { onConflict: "user_id,day" });
+        localStorage.setItem(`dayflow-days-migrated-${userId}`, "1");
+      }
+      setCloudLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+  useEffect(() => {
+    if (!supabase || !userId || !cloudLoaded) return;
+    void supabase.from("dayflow_profiles").upsert({ user_id: userId, name: account.name, settings: account.settings, updated_at: new Date().toISOString() });
+    void supabase.from("dayflow_days").upsert({
+      user_id: userId, day: todayKey(), completed, activities, water,
+      bathroom: Number(localStorage.getItem(poopKey()) || 0),
+      bathroom_detail: JSON.parse(localStorage.getItem(poopDetailKey()) || "null"),
+      screen: JSON.parse(localStorage.getItem(screenKey()) || "{}"),
+      updated_at: new Date().toISOString()
+    });
+  }, [account, activities, completed, cloudLoaded, userId, water]);
   useEffect(() => { if (!toast) return; const timeout = window.setTimeout(() => setToast(""), 2400); return () => window.clearTimeout(timeout); }, [toast]);
   const toggleHabit = (habit: string) => { const key = `${phase}:${habit}`; setCompleted((items) => items.includes(key) ? items.filter((item) => item !== key) : [...items, key]); };
   const addHabit = (targetPhase: PhaseId, text: string) => {
@@ -279,7 +343,7 @@ function Today({ account, onLogout, onAccountChange }: { account: Account; onLog
   if (page === "water" || page === "bathroom" || page === "screen") return <TrackerPage kind={page} onBack={() => setPage("today")} />;
   if (page === "timeline") return <TimelinePage account={account} completed={completed} activities={activities} water={water} poop={Number(localStorage.getItem(poopKey()) || 0)} screen={Number(localStorage.getItem(screenKey()) || 0)} onBack={() => setPage("today")} />;
   if (page === "calendar") return <CalendarPage account={account} currentCompleted={completed} onBack={() => setPage("today")} />;
-  if (page === "vault") return <VaultPage account={account} onBack={() => setPage("today")} />;
+  if (page === "vault") return <VaultPage account={account} userId={userId} onBack={() => setPage("today")} />;
   if (page === "settings") return <SettingsPage account={account} onSave={(next) => { onAccountChange(next); setPage("today"); }} onBack={() => setPage("today")} />;
   if (reviewOpen) return <DayReview account={account} completed={completed} activities={activities} water={water} poop={Number(localStorage.getItem(poopKey()) || 0)} screen={Object.values(JSON.parse(localStorage.getItem(screenKey()) || "{}") as ScreenBreakdown).reduce((sum, value) => sum + value, 0)} onClose={() => setReviewOpen(false)} onCompleteLater={completeLater} onToggleHabit={(targetPhase, habit) => setCompleted((items) => items.filter((item) => item !== `${targetPhase}:${habit}`))} onAdd={() => setAddModal(true)} />;
   return <main className={`app phase-${phase}`}><div className="sky" aria-hidden="true"><div className="sun-orb" /><div className="cloud cloud-one"><CloudSun size={56} /></div><div className="cloud cloud-two"><CloudSun size={42} /></div><div className="stars">✦　·　✧　　·　✦　　·</div></div>
@@ -303,7 +367,7 @@ function App() {
   const complete = (next: Account) => { localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); setOnboarding(false); };
   if (!account) return <Join onJoin={join} />;
   if (onboarding) return <Onboarding account={account} onComplete={complete} />;
-  return <Today account={account} onAccountChange={(next) => { localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); }} onLogout={() => { if (supabase) void supabase.auth.signOut(); setAccount(null); setSession(null); setOnboarding(false); }} />;
+  return <Today account={account} userId={session?.user.id} onAccountChange={(next) => { localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); }} onLogout={() => { if (supabase) void supabase.auth.signOut(); setAccount(null); setSession(null); setOnboarding(false); }} />;
 }
 
 export default App;
