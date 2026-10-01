@@ -91,15 +91,22 @@ function Onboarding({ account, onComplete }: { account: Account; onComplete: (ac
   const [step, setStep] = useState(0);
   const [settings, setSettings] = useState<PhaseSettings>(structuredClone(defaults));
   const [activePhase, setActivePhase] = useState<PhaseId>("morning");
+  const [newHabit, setNewHabit] = useState("");
   const current = settings[activePhase];
   const update = (key: "start" | "end", value: string) => setSettings((old) => ({ ...old, [activePhase]: { ...old[activePhase], [key]: value } }));
   const updateHabits = (value: string) => setSettings((old) => ({ ...old, [activePhase]: { ...old[activePhase], habits: value.split("\n").map((item) => item.trim()).filter(Boolean) } }));
+  const addHabit = () => {
+    const habit = newHabit.trim();
+    if (!habit || current.habits.some((item) => item.toLowerCase() === habit.toLowerCase())) return;
+    setSettings((old) => ({ ...old, [activePhase]: { ...old[activePhase], habits: [...old[activePhase].habits, habit] } }));
+    setNewHabit("");
+  };
   const finish = () => onComplete({ ...account, settings });
   return <main className="app phase-morning onboarding"><div className="onboarding-wrap"><div className="onboarding-head"><a className="brand" href="/"><span className="brand-mark"><Flower2 size={18} /></span>dayflow</a><span className="step-count">{step + 1} / 3</span></div><div className="onboarding-card">
     {step === 0 && <><p className="section-label">A little context</p><h1>When does your day <em>change?</em></h1><p className="join-copy">Rough times are perfect. These are just the moments Dayflow uses to bring the right things forward.</p><div className="phase-editor">{phaseInfo.map((item) => <div className="time-row" key={item.id}><span className="phase-name"><item.icon size={17} />{item.label}</span><input type="time" value={settings[item.id].start} onChange={(event) => setSettings((old) => ({ ...old, [item.id]: { ...old[item.id], start: event.target.value } }))} /><span>to</span><input type="time" value={settings[item.id].end} onChange={(event) => setSettings((old) => ({ ...old, [item.id]: { ...old[item.id], end: event.target.value } }))} /></div>)}</div></>}
-    {step === 1 && <><p className="section-label">Your everyday rhythm</p><h1>What belongs in each <em>part?</em></h1><p className="join-copy">One habit per line. You can always change these later — this is a starting point, not a promise.</p><div className="phase-tabs">{phaseInfo.map((item) => <button className={activePhase === item.id ? "selected" : ""} onClick={() => setActivePhase(item.id)} key={item.id}><item.icon size={15} />{item.label}</button>)}</div><textarea className="habit-editor" value={current.habits.join("\n")} onChange={(event) => updateHabits(event.target.value)} /></>}
+    {step === 1 && <><p className="section-label">Your everyday rhythm</p><h1>What belongs in each <em>part?</em></h1><p className="join-copy">Add habits one at a time, or edit the list directly. Press Enter in the field below to add it.</p><div className="phase-tabs">{phaseInfo.map((item) => <button type="button" className={activePhase === item.id ? "selected" : ""} onClick={() => { setActivePhase(item.id); setNewHabit(""); }} key={item.id}><item.icon size={15} />{item.label}</button>)}</div><div className="onboarding-add-habit"><input value={newHabit} onChange={(event) => setNewHabit(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addHabit(); } }} placeholder={`Add a ${phaseInfo.find((item) => item.id === activePhase)?.label.toLowerCase()} habit`} /><button type="button" onClick={addHabit}><CirclePlus size={16} /> Add habit</button></div><textarea aria-label={`${phaseInfo.find((item) => item.id === activePhase)?.label} habits`} className="habit-editor" value={current.habits.join("\n")} onChange={(event) => updateHabits(event.target.value)} /></>}
     {step === 2 && <><p className="section-label">You’re all set, {account.name}</p><h1>Your day, in <em>motion.</em></h1><p className="join-copy">Dayflow will gently bring each part of your routine forward as your day moves. Nothing is lost when a moment passes.</p><div className="setup-preview">{phaseInfo.map((item) => <div key={item.id}><span><item.icon size={16} />{item.label}</span><small>{settings[item.id].habits.length} habits · {formatTime(settings[item.id].start)} start</small></div>)}</div></>}
-    <button className="primary-button onboarding-next" onClick={() => step < 2 ? setStep(step + 1) : finish()}>{step < 2 ? "Continue" : "Enter my day"} <ArrowUpRight size={17} /></button>
+    <button type="button" className="primary-button onboarding-next" onClick={() => step < 2 ? setStep(step + 1) : finish()}>{step < 2 ? "Continue" : "Enter my day"} <ArrowUpRight size={17} /></button>
   </div></div></main>;
 }
 
