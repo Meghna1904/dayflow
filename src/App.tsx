@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { createClient, type Session } from "@supabase/supabase-js";
 import {
   ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, CirclePlus, CloudSun, Droplets, Flower2,
   CalendarDays, Clock3, Menu, Moon, Settings2, Sparkles, Sun, Sunrise, Sunset, X,
@@ -9,6 +10,12 @@ type Phase = { id: PhaseId; label: string; eyebrow: string; greeting: string; ic
 type PhaseSettings = Record<PhaseId, { start: string; end: string; habits: string[]; archivedHabits?: string[] }>;
 type Account = { name: string; passcode: string; settings: PhaseSettings };
 type Activity = { id: string; text: string; phase: PhaseId; completedAt: string; addedLater: boolean };
+type VaultCategory = "Thoughts" | "Movies" | "Music" | "Books" | "Places" | "Instagram links" | "Docs links" | "Jobs";
+type VaultItem = { id: string; text: string; category: VaultCategory; createdAt: string };
+const vaultCategories: VaultCategory[] = ["Thoughts", "Movies", "Music", "Books", "Places", "Instagram links", "Docs links", "Jobs"];
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 const phaseInfo: Phase[] = [
   { id: "morning", label: "Morning", eyebrow: "A fresh start", greeting: "Good morning", icon: Sunrise },
@@ -117,6 +124,32 @@ function AddSomething({ phase, onClose, onHabit, onActivity }: { phase: PhaseId;
   </form></div>;
 }
 
+function SupabaseAuth({ onAuthenticated }: { onAuthenticated: (session: Session) => void }) {
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [name, setName] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  const submit = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true); setError("");
+    const result = mode === "login" ? await supabase!.auth.signInWithPassword({ email, password }) : await supabase!.auth.signUp({ email, password, options: { data: { name: name.trim() } } });
+    if (result.error) setError(result.error.message); else if (result.data.session) onAuthenticated(result.data.session); else setError("Check your email to confirm your account, then log in.");
+    setBusy(false);
+  };
+  return <main className="app phase-morning join-screen"><div className="join-wrap"><a className="brand" href="/"><span className="brand-mark"><Flower2 size={18} /></span>dayflow</a><div className="join-card"><p className="kicker"><span className="pulse" /> Your private Dayflow</p><h1>{mode === "login" ? <>Welcome <em>back.</em></> : <>Make your <em>account.</em></>}</h1><p className="join-copy">Sign in with email and password to keep your routine and Vault available across devices.</p><form onSubmit={submit}>{mode === "signup" && <label>Your name<input value={name} onChange={(event) => setName(event.target.value)} required /></label>}<label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{error && <p className="form-error">{error}</p>}<button className="primary-button" disabled={busy}>{busy ? "Opening..." : mode === "login" ? "Log in" : "Create account"} <ArrowUpRight size={17} /></button></form><button className="switch-button" onClick={() => setMode(mode === "login" ? "signup" : "login")}>{mode === "login" ? "New here? Create an account" : "Already have an account? Log in"}</button></div></div></main>;
+}
+
+function VaultPage({ account, onBack }: { account: Account; onBack: () => void }) {
+  const key = `dayflow-vault-${account.name.toLowerCase()}`;
+  const [items, setItems] = useState<VaultItem[]>(() => JSON.parse(localStorage.getItem(key) || "[]") as VaultItem[]);
+  const [text, setText] = useState(""); const [category, setCategory] = useState<VaultCategory>("Thoughts"); const [filter, setFilter] = useState<VaultCategory | "All">("All"); const [busy, setBusy] = useState(false);
+  const save = (next: VaultItem[]) => { setItems(next); localStorage.setItem(key, JSON.stringify(next)); };
+  const add = async (event: FormEvent) => {
+    event.preventDefault(); if (!text.trim()) return; setBusy(true); let chosen = category;
+    try { const result = await fetch("/api/vault-categorize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) }); if (result.ok) { const data = await result.json() as { category?: VaultCategory }; if (data.category && vaultCategories.includes(data.category)) chosen = data.category; } } catch { /* local categorization remains available */ }
+    save([{ id: crypto.randomUUID(), text: text.trim(), category: chosen, createdAt: new Date().toISOString() }, ...items]); setText(""); setCategory(chosen); setBusy(false);
+  };
+  const visible = filter === "All" ? items : items.filter((item) => item.category === filter);
+  return <main className="app phase-afternoon subpage"><header className="topbar"><button className="back-link" onClick={onBack}>← Today</button><a className="brand" href="/"><span className="brand-mark"><Flower2 size={18} /></span>dayflow</a><span>🔐</span></header><section className="subpage-wrap vault-wrap"><p className="kicker"><span className="pulse" /> A private shelf for your brain</p><h1>Your <em>Vault.</em></h1><p className="tracker-copy">Save a passing thought, link, recommendation, or opportunity. Gemini can sort it; you stay in control.</p><form className="vault-compose" onSubmit={add}><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Paste a link or write a thought..." /><div><select value={category} onChange={(event) => setCategory(event.target.value as VaultCategory)}>{vaultCategories.map((item) => <option key={item}>{item}</option>)}</select><button className="primary-button" disabled={busy}>{busy ? "Sorting..." : "Save to Vault"} <Sparkles size={16} /></button></div></form><div className="vault-filters"><button className={filter === "All" ? "selected" : ""} onClick={() => setFilter("All")}>All</button>{vaultCategories.map((item) => <button className={filter === item ? "selected" : ""} onClick={() => setFilter(item)} key={item}>{item}</button>)}</div><div className="vault-list">{visible.length ? visible.map((item) => <article className="vault-item" key={item.id}><div><span className="vault-category">{item.category}</span><p>{item.text}</p><small>{new Date(item.createdAt).toLocaleDateString()}</small></div><button onClick={() => save(items.filter((candidate) => candidate.id !== item.id))} aria-label="Delete vault item"><X size={15} /></button></article>) : <p className="empty-habits">Your saved sparks will live here.</p>}</div></section></main>;
+}
+
 function DayReview({ account, completed, activities, water, poop, screen, onClose, onCompleteLater, onToggleHabit, onAdd, readOnly = false, dateLabel }: { account: Account; completed: string[]; activities: Activity[]; water: number; poop: number; screen: number; onClose: () => void; onCompleteLater: (phase: PhaseId, habit: string) => void; onToggleHabit: (phase: PhaseId, habit: string) => void; onAdd: () => void; readOnly?: boolean; dateLabel?: string }) {
   const totalDone = phaseInfo.reduce((sum, item) => sum + allHabits(account.settings, item.id).filter((habit) => completed.includes(`${item.id}:${habit}`)).length, 0) + activities.length;
   const totalHabits = phaseInfo.reduce((sum, item) => sum + activeHabits(account.settings, item.id).length, 0);
@@ -212,7 +245,7 @@ function Today({ account, onLogout, onAccountChange }: { account: Account; onLog
   const [reviewOpen, setReviewOpen] = useState(() => getCurrentPhase(account.settings) === "night");
   const [activities, setActivities] = useState<Activity[]>(() => uniqueActivities(JSON.parse(localStorage.getItem(activitiesKey()) || "[]") as Activity[]));
   const [water, setWater] = useState(() => Number(localStorage.getItem(waterKey()) || 4));
-  const [page, setPage] = useState<"today" | "water" | "bathroom" | "timeline" | "calendar" | "settings" | "screen">("today");
+  const [page, setPage] = useState<"today" | "water" | "bathroom" | "timeline" | "calendar" | "settings" | "screen" | "vault">("today");
   const current = phaseInfo.find((item) => item.id === phase)!;
   const habits = activeHabits(account.settings, phase);
   const done = habits.filter((habit) => completed.includes(`${phase}:${habit}`)).length;
@@ -238,6 +271,7 @@ function Today({ account, onLogout, onAccountChange }: { account: Account; onLog
   if (page === "water" || page === "bathroom" || page === "screen") return <TrackerPage kind={page} onBack={() => setPage("today")} />;
   if (page === "timeline") return <TimelinePage account={account} completed={completed} activities={activities} water={water} poop={Number(localStorage.getItem(poopKey()) || 0)} screen={Number(localStorage.getItem(screenKey()) || 0)} onBack={() => setPage("today")} />;
   if (page === "calendar") return <CalendarPage account={account} currentCompleted={completed} onBack={() => setPage("today")} />;
+  if (page === "vault") return <VaultPage account={account} onBack={() => setPage("today")} />;
   if (page === "settings") return <SettingsPage account={account} onSave={(next) => { onAccountChange(next); setPage("today"); }} onBack={() => setPage("today")} />;
   if (reviewOpen) return <DayReview account={account} completed={completed} activities={activities} water={water} poop={Number(localStorage.getItem(poopKey()) || 0)} screen={Object.values(JSON.parse(localStorage.getItem(screenKey()) || "{}") as ScreenBreakdown).reduce((sum, value) => sum + value, 0)} onClose={() => setReviewOpen(false)} onCompleteLater={completeLater} onToggleHabit={(targetPhase, habit) => setCompleted((items) => items.filter((item) => item !== `${targetPhase}:${habit}`))} onAdd={() => setAddModal(true)} />;
   return <main className={`app phase-${phase}`}><div className="sky" aria-hidden="true"><div className="sun-orb" /><div className="cloud cloud-one"><CloudSun size={56} /></div><div className="cloud cloud-two"><CloudSun size={42} /></div><div className="stars">✦　·　✧　　·　✦　　·</div></div>
@@ -245,7 +279,7 @@ function Today({ account, onLogout, onAccountChange }: { account: Account; onLog
     <section className="hero content-width"><div className="hero-copy"><p className="kicker"><span className="pulse" /> {current.eyebrow}</p><h1>{current.greeting}, <em>{account.name}.</em></h1><p className="intro">Here’s a little space for what matters <span>right now.</span></p></div><div className="time-card"><Icon size={22} strokeWidth={1.7} /><div><strong>{now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</strong><span>{current.label} · {formatTime(account.settings[phase].start)} — {formatTime(account.settings[phase].end)}</span></div></div></section>
     <section className="content-width dashboard-grid"><div className="primary-column"><div className="section-heading"><div><p className="section-label">Your flow</p><h2>{current.label} things</h2></div><button className="edit-routine-button" onClick={() => setPage("settings")}><Settings2 size={14} /> Edit routine</button><span className="progress-count">{done}/{habits.length} done</span></div><div className="habit-list">{habits.length ? habits.map((habit, index) => { const isDone = completed.includes(`${phase}:${habit}`); return <button className={`habit-row ${isDone ? "is-done" : ""}`} key={`${habit}-${index}`} onClick={() => toggleHabit(habit)}><span className="check-box">{isDone && <Check size={14} strokeWidth={3} />}</span><span className="habit-name">{habit}</span><span className="habit-number">0{index + 1}</span></button>; }) : <p className="empty-habits">Nothing planned here yet. Add a small thing when you’re ready.</p>}</div><button className="add-line" onClick={() => setAddOpen(true)}><CirclePlus size={18} /> Add something to your {current.label.toLowerCase()}</button><div className="reflection-card"><div className="reflection-icon"><Sparkles size={20} /></div><div><p className="section-label">A tiny reflection</p><h3>How are you feeling so far?</h3><p>Nothing to fix. Just a moment to notice.</p></div><ArrowUpRight size={18} className="reflection-arrow" /></div></div>
       <aside className="side-column"><div className="side-card phase-card"><div className="side-card-head"><p className="section-label">Day overview</p><Menu size={18} /></div><div className="phase-track">{overview.map((item) => { const PhaseIcon = item.icon; return <button key={item.id} className={`phase-stop ${item.id === phase ? "selected" : ""}`} onClick={() => { setPhase(item.id); setToast(`${item.label} is in view`); }}><span className="track-line" /><span className="phase-dot"><PhaseIcon size={13} /></span><span><strong>{item.label}</strong><small>{item.done}/{item.total} · {formatTime(account.settings[item.id].start)}</small></span></button>; })}</div><p className="phase-hint">Only your current moment stays in focus <span>✦</span></p><button className="review-link" onClick={() => setReviewOpen(true)}>Review my day <ArrowUpRight size={15} /></button></div><div className="side-card water-card"><div className="water-icon"><Droplets size={21} /></div><div><p className="section-label">Little check-in</p><h3>Water</h3><p className="muted">You’ve had <strong>{water} glasses</strong> today.</p></div><button className="round-add" onClick={() => { const next = Math.min(water + 1, 8); setWater(next); localStorage.setItem(waterKey(), String(next)); setToast("A glass of water added"); }}>+</button><div className="water-dots">{[1, 2, 3, 4, 5, 6].map((dot) => <span className={dot <= water ? "filled" : ""} key={dot} />)}</div></div></aside></section>
-    <nav className="bottom-nav content-width" aria-label="Main navigation"><button className="active">Today</button><button onClick={() => setPage("timeline")}>Timeline</button><button onClick={() => setPage("calendar")}>Calendar</button><button onClick={() => setPage("water")}><Droplets size={14} /> Water</button><button onClick={() => setPage("bathroom")}>🚽 Bathroom</button><button onClick={() => setPage("screen")}>📱 Screen</button><button className="nav-settings" onClick={() => setPage("settings")}><Settings2 size={14} /> Edit routine</button></nav>
+    <nav className="bottom-nav content-width" aria-label="Main navigation"><button className="active">Today</button><button onClick={() => setPage("timeline")}>Timeline</button><button onClick={() => setPage("calendar")}>Calendar</button><button onClick={() => setPage("vault")}>🔐 Vault</button><button onClick={() => setPage("water")}><Droplets size={14} /> Water</button><button onClick={() => setPage("bathroom")}>🚽 Bathroom</button><button onClick={() => setPage("screen")}>📱 Screen</button><button className="nav-settings" onClick={() => setPage("settings")}><Settings2 size={14} /> Edit routine</button></nav>
     <button className={`floating-add ${addOpen ? "open" : ""}`} onClick={() => setAddOpen((open) => !open)} aria-label="Add something">{addOpen ? <X size={22} /> : <CirclePlus size={23} />}<span>{addOpen ? "Close" : "Add"}</span></button>{addOpen && <div className="add-menu"><button onClick={() => { setAddOpen(false); setAddModal(true); }}><Check size={17} /> Habit</button><button onClick={() => { setAddOpen(false); setAddModal(true); }}><Sparkles size={17} /> Something I did</button></div>}{addModal && <AddSomething phase={phase} onClose={() => setAddModal(false)} onHabit={addHabit} onActivity={addActivity} />}{toast && <div className="toast"><Check size={16} /> {toast}</div>}<span className="screen-reader-only">{currentMinutes}</span>
   </main>;
 }
@@ -253,11 +287,15 @@ function Today({ account, onLogout, onAccountChange }: { account: Account; onLog
 function App() {
   const [account, setAccount] = useState<Account | null>(() => { const saved = localStorage.getItem(storageKey); return saved ? JSON.parse(saved) as Account : null; });
   const [onboarding, setOnboarding] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  useEffect(() => { if (!supabase) return; supabase.auth.getSession().then(({ data }) => setSession(data.session)); const listener = supabase.auth.onAuthStateChange((_event, next) => setSession(next)); return () => listener.data.subscription.unsubscribe(); }, []);
+  useEffect(() => { if (supabase && session && !account) { const next = { name: session.user.user_metadata.name || session.user.email?.split("@")[0] || "friend", passcode: "supabase", settings: defaults }; localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); } }, [account, session]);
+  if (supabase && !session) return <SupabaseAuth onAuthenticated={setSession} />;
   const join = (next: Account) => { setAccount(next); setOnboarding(!localStorage.getItem(storageKey)); };
   const complete = (next: Account) => { localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); setOnboarding(false); };
   if (!account) return <Join onJoin={join} />;
   if (onboarding) return <Onboarding account={account} onComplete={complete} />;
-  return <Today account={account} onAccountChange={(next) => { localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); }} onLogout={() => { setAccount(null); setOnboarding(false); }} />;
+  return <Today account={account} onAccountChange={(next) => { localStorage.setItem(storageKey, JSON.stringify(next)); setAccount(next); }} onLogout={() => { if (supabase) void supabase.auth.signOut(); setAccount(null); setSession(null); setOnboarding(false); }} />;
 }
 
 export default App;
